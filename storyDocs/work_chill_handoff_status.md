@@ -1,6 +1,6 @@
 # Work Chill Handoff and Status
 
-Last updated: 2026-02-21 (America/New_York)
+Last updated: 2026-02-28 (America/New_York)
 
 ## Scope Completed
 
@@ -13,6 +13,7 @@ Implemented a low-friction macOS terminal workflow named `work_chill` with:
 - Friction-check prompt loop every 55 minutes with AppleScript button UI (or terminal fallback).
 - Pause/resume controls (`pause`, `resume`) so 8-hour shutdown is based on active work time (excluding paused breaks).
 - Escalation flow after 3 consecutive `same_as_last` responses and on `stuck`.
+- Optional hand yoga reminder loop with URL-gated enablement, active-time interval tracking, collision deferral, and daily cap.
 - Guided shutdown ritual and meditation follow-up.
 - Local state/log persistence under `~/.work_chill`.
 - ISO-week log rotation (`Mon-Sun`) with compatibility symlink at `~/.work_chill/log.jsonl`.
@@ -50,6 +51,9 @@ Confirmed lines:
 - `work_chill shutdown`
 - `work_chill cancel`
 - `work_chill debug-prompt`
+- `work_chill hand-yoga-url set "<url>"`
+- `work_chill hand-yoga-url clear`
+- `work_chill hand-yoga-url show`
 - `work_chill set-meditation-url "<url>"`
 - `work_chill clear-meditation-url`
 - `work_chill tail`
@@ -63,9 +67,17 @@ Confirmed lines:
   - `day_start_ts`
   - `prompt_pid`
   - `eod_pid`
+  - `hand_yoga_pid`
   - `meditation_url`
+  - `hand_yoga_url`
+  - `hand_yoga_interval_secs`
+  - `hand_yoga_max_per_day`
+  - `hand_yoga_count_today`
+  - `last_hand_yoga_ts`
+  - `hand_yoga_snoozed_until`
   - `last_task_text`
   - `last_prompt_ts`
+  - `last_escalation_ts`
   - `paused` (`yes`/`no`)
   - `pause_started_ts`
   - `paused_total_secs`
@@ -338,6 +350,58 @@ Observed:
   - `{"ts":"2026-02-21T16:01:16Z","event":"TASK_PULSE_SKIPPED","action":"skip","day_start_ts":"1771689676"}`
   - `{"ts":"2026-02-21T16:01:21Z","event":"TASK_PULSE","action":"new_task","task_text":"","day_start_ts":"1771689676"}`
   - `{"ts":"2026-02-21T16:01:26Z","event":"TASK_PULSE","action":"same_as_last","task_text":"","day_start_ts":"1771689676"}`
+
+## 2026-02-28 Hand Yoga Reminder Upgrade
+
+Implemented in `/Users/joseph/hss_docker/work_chill/work_chill` with minimal changes and no new external services.
+
+### Added Behavior
+
+- Feature-gated reminder (`hand_yoga_url` is the on/off switch):
+  - empty URL -> feature off, no reminder loop activity
+  - non-empty URL -> reminder loop enabled
+- Reminder cadence:
+  - every 3 hours of active work time
+  - max 2 reminders per day
+  - respects `pause`/`resume` (paused time excluded)
+- Collision safety:
+  - no hand-yoga prompt within 5 minutes of `TASK_PULSE`
+  - no hand-yoga prompt within 10 minutes of `ESCALATION`
+  - reminder is deferred instead of dropped
+- Prompt actions:
+  - `Do it now` -> opens URL, logs `HAND_YOGA start`
+  - `Snooze 20m` -> sets snooze timestamp, logs `HAND_YOGA snooze`
+  - `Skip today` -> reaches daily max, logs `HAND_YOGA skip_day`
+
+### New Commands
+
+- `work_chill hand-yoga-url set "<url>"`
+- `work_chill hand-yoga-url clear`
+- `work_chill hand-yoga-url show`
+
+### Status Fields Added
+
+- `hand_yoga_url_set`
+- `hand_yoga_url`
+- `hand_yoga_count_today`
+- `hand_yoga_pid` health line
+
+### Test Mode Overrides
+
+- hand yoga interval: 30 seconds
+- hand yoga snooze: 5 seconds
+
+### Validation Summary (2026-02-28)
+
+- URL set/clear/show flow verified.
+- Reminder actions (`start`, `snooze`, `skip_day`) verified in logs.
+- Collision deferral verified for recent task-pulse/escalation windows.
+- Pause/resume verified to shift hand-yoga timing by paused duration.
+
+### Log Cleanup
+
+- Removed temporary test-session entries from `~/.work_chill/logs/2026-W09.jsonl`.
+- Since `~/.work_chill/log.jsonl` is a symlink to the current weekly file, cleanup is reflected there as well.
 
 ## Usage Quickstart
 

@@ -19,8 +19,16 @@ day_start_ts=""
 prompt_pid=""
 eod_pid=""
 meditation_url="$DEFAULT_MEDITATION_URL"
+hand_yoga_url=""
+hand_yoga_interval_secs="10800"
+hand_yoga_max_per_day="2"
+hand_yoga_count_today="0"
+last_hand_yoga_ts=""
+hand_yoga_snoozed_until=""
+hand_yoga_pid=""
 last_task_text=""
 last_prompt_ts=""
+last_escalation_ts=""
 paused="no"
 pause_started_ts=""
 paused_total_secs="0"
@@ -83,6 +91,28 @@ state_day_length_secs() {
     length="$(day_length_sec)"
   fi
   printf '%s' "$length"
+}
+
+state_hand_yoga_interval_secs() {
+  local interval
+  interval="$(int_or_default "${hand_yoga_interval_secs:-}" "0")"
+  if [[ "$interval" -le 0 ]]; then
+    interval="$(hand_yoga_interval_sec)"
+  fi
+  printf '%s' "$interval"
+}
+
+state_hand_yoga_max_per_day() {
+  local max_per_day
+  max_per_day="$(int_or_default "${hand_yoga_max_per_day:-}" "0")"
+  if [[ "$max_per_day" -le 0 ]]; then
+    max_per_day="2"
+  fi
+  printf '%s' "$max_per_day"
+}
+
+hand_yoga_enabled() {
+  [[ -n "${hand_yoga_url:-}" ]]
 }
 
 effective_paused_total_secs() {
@@ -167,6 +197,26 @@ meditation_timer_sec() {
   else
     printf '360'
   fi
+}
+
+hand_yoga_interval_sec() {
+  if is_test_mode; then
+    printf '30'
+  else
+    printf '10800'
+  fi
+}
+
+hand_yoga_snooze_sec() {
+  if is_test_mode; then
+    printf '5'
+  else
+    printf '1200'
+  fi
+}
+
+hand_yoga_defer_sec() {
+  printf '600'
 }
 
 resolve_script_path() {
@@ -290,9 +340,17 @@ save_state() {
     printf 'export day_start_ts=%q\n' "${day_start_ts:-}"
     printf 'export prompt_pid=%q\n' "${prompt_pid:-}"
     printf 'export eod_pid=%q\n' "${eod_pid:-}"
+    printf 'export hand_yoga_pid=%q\n' "${hand_yoga_pid:-}"
     printf 'export meditation_url=%q\n' "${meditation_url:-}"
+    printf 'export hand_yoga_url=%q\n' "${hand_yoga_url:-}"
+    printf 'export hand_yoga_interval_secs=%q\n' "${hand_yoga_interval_secs:-10800}"
+    printf 'export hand_yoga_max_per_day=%q\n' "${hand_yoga_max_per_day:-2}"
+    printf 'export hand_yoga_count_today=%q\n' "${hand_yoga_count_today:-0}"
+    printf 'export last_hand_yoga_ts=%q\n' "${last_hand_yoga_ts:-}"
+    printf 'export hand_yoga_snoozed_until=%q\n' "${hand_yoga_snoozed_until:-}"
     printf 'export last_task_text=%q\n' "${last_task_text:-}"
     printf 'export last_prompt_ts=%q\n' "${last_prompt_ts:-}"
+    printf 'export last_escalation_ts=%q\n' "${last_escalation_ts:-}"
     printf 'export paused=%q\n' "${paused:-no}"
     printf 'export pause_started_ts=%q\n' "${pause_started_ts:-}"
     printf 'export paused_total_secs=%q\n' "${paused_total_secs:-0}"
@@ -307,9 +365,17 @@ load_state() {
   day_start_ts=""
   prompt_pid=""
   eod_pid=""
+  hand_yoga_pid=""
   meditation_url="$DEFAULT_MEDITATION_URL"
+  hand_yoga_url=""
+  hand_yoga_interval_secs="$(hand_yoga_interval_sec)"
+  hand_yoga_max_per_day="2"
+  hand_yoga_count_today="0"
+  last_hand_yoga_ts=""
+  hand_yoga_snoozed_until=""
   last_task_text=""
   last_prompt_ts=""
+  last_escalation_ts=""
   paused="no"
   pause_started_ts=""
   paused_total_secs="0"
@@ -339,6 +405,30 @@ load_state() {
   prompt_interval_secs="$(int_or_default "${prompt_interval_secs:-}" "0")"
   if [[ "$prompt_interval_secs" -eq 0 ]]; then
     prompt_interval_secs="$(prompt_interval_sec)"
+  fi
+  hand_yoga_interval_secs="$(int_or_default "${hand_yoga_interval_secs:-}" "0")"
+  if [[ "$hand_yoga_interval_secs" -le 0 ]]; then
+    hand_yoga_interval_secs="$(hand_yoga_interval_sec)"
+  fi
+  hand_yoga_max_per_day="$(int_or_default "${hand_yoga_max_per_day:-}" "0")"
+  if [[ "$hand_yoga_max_per_day" -le 0 ]]; then
+    hand_yoga_max_per_day="2"
+  fi
+  hand_yoga_count_today="$(int_or_default "${hand_yoga_count_today:-}" "0")"
+  if [[ "$hand_yoga_count_today" -lt 0 ]]; then
+    hand_yoga_count_today="0"
+  fi
+  last_hand_yoga_ts="$(int_or_default "${last_hand_yoga_ts:-}" "0")"
+  if [[ "$last_hand_yoga_ts" -eq 0 ]]; then
+    last_hand_yoga_ts=""
+  fi
+  hand_yoga_snoozed_until="$(int_or_default "${hand_yoga_snoozed_until:-}" "0")"
+  if [[ "$hand_yoga_snoozed_until" -eq 0 ]]; then
+    hand_yoga_snoozed_until=""
+  fi
+  last_escalation_ts="$(int_or_default "${last_escalation_ts:-}" "0")"
+  if [[ "$last_escalation_ts" -eq 0 ]]; then
+    last_escalation_ts=""
   fi
   consecutive_same_count="$(int_or_default "${consecutive_same_count:-}" "0")"
   last_action="${last_action:-}"
@@ -457,8 +547,10 @@ kill_pid_if_ours() {
 cancel_jobs_in_memory() {
   kill_pid_if_ours "${prompt_pid:-}" "__prompt-loop"
   kill_pid_if_ours "${eod_pid:-}" "__eod-wait"
+  kill_pid_if_ours "${hand_yoga_pid:-}" "__hand-yoga-loop"
   prompt_pid=""
   eod_pid=""
+  hand_yoga_pid=""
 }
 
 cancel_jobs_only() {
@@ -470,7 +562,9 @@ reset_active_day_state() {
   day_start_ts=""
   prompt_pid=""
   eod_pid=""
+  hand_yoga_pid=""
   last_prompt_ts=""
+  last_escalation_ts=""
   paused="no"
   pause_started_ts=""
   paused_total_secs="0"
@@ -656,6 +750,86 @@ get_escalation_choice() {
   fi
 
   printf 'Ignore'
+}
+
+hand_yoga_action_osascript() {
+  local out=""
+  local rc=0
+  local timeout
+  local tmp_err=""
+  local stderr_text=""
+  timeout="$(pulse_dialog_timeout_sec)"
+  tmp_err="$(mktemp "${TMPDIR:-/tmp}/work_chill_hand_yoga.XXXXXX")"
+  out="$(osascript <<APPLESCRIPT 2>"$tmp_err"
+activate
+set d to display dialog "Quick 5-6 minute hand reset to keep things loose." with title "✋ Hand reset" buttons {"Do it now", "Snooze 20m", "Skip today"} default button "Snooze 20m" giving up after $timeout
+if gave up of d then return "Snooze 20m"
+return button returned of d
+APPLESCRIPT
+)"
+  rc=$?
+  stderr_text="$(single_line "$(cat "$tmp_err" 2>/dev/null || true)")"
+  rm -f "$tmp_err"
+
+  bg_log "hand_yoga_dialog rc=$rc output=\"$(single_line "$out")\" stderr=\"$stderr_text\""
+
+  if [[ "$rc" -ne 0 ]]; then
+    if [[ "$stderr_text" == *"(-128)"* ]]; then
+      printf 'Snooze 20m'
+      return 0
+    fi
+    return 1
+  fi
+
+  if [[ "$out" == "Do it now" || "$out" == "Snooze 20m" || "$out" == "Skip today" ]]; then
+    printf '%s' "$out"
+    return 0
+  fi
+
+  out="$(resolve_button_from_osascript_output "$out")"
+  if [[ "$out" == "Do it now" || "$out" == "Snooze 20m" || "$out" == "Skip today" ]]; then
+    printf '%s' "$out"
+    return 0
+  fi
+
+  printf 'Snooze 20m'
+}
+
+hand_yoga_action_terminal() {
+  local choice=""
+  printf '\nHand reset\n'
+  printf '1) Do it now\n'
+  printf '2) Snooze 20m\n'
+  printf '3) Skip today\n'
+  printf 'Choose [1-3]: '
+  IFS= read -r choice
+  case "$choice" in
+    1) printf 'Do it now' ;;
+    3) printf 'Skip today' ;;
+    *) printf 'Snooze 20m' ;;
+  esac
+}
+
+get_hand_yoga_action() {
+  local action=""
+  case "${WORK_CHILL_FORCE_HAND_YOGA_CHOICE:-}" in
+    "start") printf 'Do it now'; return 0 ;;
+    "snooze") printf 'Snooze 20m'; return 0 ;;
+    "skip_day") printf 'Skip today'; return 0 ;;
+  esac
+
+  action="$(hand_yoga_action_osascript || true)"
+  if [[ -n "$action" ]]; then
+    printf '%s' "$action"
+    return 0
+  fi
+
+  if [[ -t 0 ]]; then
+    hand_yoga_action_terminal
+    return 0
+  fi
+
+  printf 'Snooze 20m'
 }
 
 text_input_osascript() {
@@ -903,6 +1077,10 @@ trigger_escalation() {
   local input_text=""
   local break_secs=0
 
+  load_state
+  last_escalation_ts="$(date +%s)"
+  save_state
+
   bg_log "escalation_trigger reason=\"$reason\""
   choice="$(get_escalation_choice)"
 
@@ -925,6 +1103,166 @@ trigger_escalation() {
       ;;
     *)
       log_event "ESCALATION" "ignore" "" "" ""
+      ;;
+  esac
+}
+
+hand_yoga_in_quiet_window() {
+  local now="${1:-}"
+  local last_prompt=0
+  local last_escalation=0
+
+  last_prompt="$(int_or_default "${last_prompt_ts:-}" "0")"
+  if (( last_prompt > 0 )); then
+    if (( now - last_prompt < 300 )); then
+      return 0
+    fi
+  fi
+
+  last_escalation="$(int_or_default "${last_escalation_ts:-}" "0")"
+  if (( last_escalation > 0 )); then
+    if (( now - last_escalation < 600 )); then
+      return 0
+    fi
+  fi
+
+  return 1
+}
+
+defer_hand_yoga_quiet_window() {
+  local now="${1:-}"
+  local defer_secs=0
+  local target=0
+  local existing=0
+  defer_secs="$(hand_yoga_defer_sec)"
+  target=$((now + defer_secs))
+  existing="$(int_or_default "${hand_yoga_snoozed_until:-}" "0")"
+  if (( existing > target )); then
+    target="$existing"
+  fi
+  hand_yoga_snoozed_until="$target"
+  save_state
+}
+
+hand_yoga_due_now() {
+  local now="${1:-}"
+  local interval=0
+  local max_per_day=0
+  local count_today=0
+  local snoozed_until=0
+  local last_ts=0
+
+  hand_yoga_enabled || return 1
+  interval="$(state_hand_yoga_interval_secs)"
+  max_per_day="$(state_hand_yoga_max_per_day)"
+  count_today="$(int_or_default "${hand_yoga_count_today:-}" "0")"
+  if (( count_today >= max_per_day )); then
+    return 1
+  fi
+
+  snoozed_until="$(int_or_default "${hand_yoga_snoozed_until:-}" "0")"
+  if (( snoozed_until > now )); then
+    return 1
+  fi
+
+  last_ts="$(int_or_default "${last_hand_yoga_ts:-}" "0")"
+  if (( last_ts <= 0 )); then
+    return 1
+  fi
+
+  if (( now - last_ts >= interval )); then
+    return 0
+  fi
+  return 1
+}
+
+next_hand_yoga_sleep_secs() {
+  local now="${1:-}"
+  local interval=0
+  local max_per_day=0
+  local count_today=0
+  local snoozed_until=0
+  local last_ts=0
+  local due_at=0
+  local sleep_for=60
+  local until_due=0
+  local until_snooze=0
+
+  hand_yoga_enabled || { printf '1'; return 0; }
+  max_per_day="$(state_hand_yoga_max_per_day)"
+  count_today="$(int_or_default "${hand_yoga_count_today:-}" "0")"
+  if (( count_today >= max_per_day )); then
+    printf '1'
+    return 0
+  fi
+
+  interval="$(state_hand_yoga_interval_secs)"
+  last_ts="$(int_or_default "${last_hand_yoga_ts:-}" "0")"
+  if (( last_ts <= 0 )); then
+    printf '30'
+    return 0
+  fi
+  due_at=$((last_ts + interval))
+  until_due=$((due_at - now))
+  if (( until_due < 1 )); then
+    until_due=1
+  fi
+
+  snoozed_until="$(int_or_default "${hand_yoga_snoozed_until:-}" "0")"
+  if (( snoozed_until > now )); then
+    until_snooze=$((snoozed_until - now))
+    if (( due_at <= now )); then
+      sleep_for="$until_snooze"
+    elif (( until_snooze < until_due )); then
+      sleep_for="$until_snooze"
+    else
+      sleep_for="$until_due"
+    fi
+  else
+    sleep_for="$until_due"
+  fi
+
+  if (( sleep_for < 1 )); then
+    sleep_for=1
+  fi
+  if (( sleep_for > 300 )); then
+    sleep_for=300
+  fi
+  printf '%s' "$sleep_for"
+}
+
+handle_hand_yoga_due() {
+  local now="${1:-}"
+  local action=""
+  local snooze_secs=0
+
+  if hand_yoga_in_quiet_window "$now"; then
+    defer_hand_yoga_quiet_window "$now"
+    return 0
+  fi
+
+  action="$(get_hand_yoga_action)"
+  case "$action" in
+    "Do it now")
+      open "$hand_yoga_url" >/dev/null 2>&1 || true
+      hand_yoga_count_today="$(int_or_default "${hand_yoga_count_today:-}" "0")"
+      hand_yoga_count_today=$((hand_yoga_count_today + 1))
+      last_hand_yoga_ts="$now"
+      hand_yoga_snoozed_until=""
+      save_state
+      log_event "HAND_YOGA" "start" "" "" ""
+      ;;
+    "Skip today")
+      hand_yoga_count_today="$(state_hand_yoga_max_per_day)"
+      hand_yoga_snoozed_until=""
+      save_state
+      log_event "HAND_YOGA" "skip_day" "" "" ""
+      ;;
+    *)
+      snooze_secs="$(hand_yoga_snooze_sec)"
+      hand_yoga_snoozed_until="$((now + snooze_secs))"
+      save_state
+      log_event "HAND_YOGA" "snooze" "" "" ""
       ;;
   esac
 }
@@ -1016,6 +1354,14 @@ start_eod_bg() {
   disown "$eod_pid" 2>/dev/null || true
 }
 
+start_hand_yoga_bg() {
+  local start_ts="${1:-}"
+  hand_yoga_enabled || return 0
+  nohup "$SCRIPT_PATH" __hand-yoga-loop "$start_ts" >> "$BG_LOG_FILE" 2>&1 &
+  hand_yoga_pid="$!"
+  disown "$hand_yoga_pid" 2>/dev/null || true
+}
+
 run_start() {
   local end_at=""
   local eod_wait=""
@@ -1070,6 +1416,13 @@ run_start() {
   day_length_secs="$eod_wait"
   prompt_interval_secs="$interval"
   last_prompt_ts=""
+  hand_yoga_pid=""
+  hand_yoga_interval_secs="$(hand_yoga_interval_sec)"
+  hand_yoga_max_per_day="2"
+  hand_yoga_count_today="0"
+  hand_yoga_snoozed_until=""
+  last_hand_yoga_ts="$day_start_ts"
+  last_escalation_ts=""
   paused="no"
   pause_started_ts=""
   paused_total_secs="0"
@@ -1079,6 +1432,7 @@ run_start() {
 
   start_prompt_loop_bg "$day_start_ts" "$interval"
   start_eod_bg "$day_start_ts" "$eod_wait"
+  start_hand_yoga_bg "$day_start_ts"
   save_state
 
   log_event "DAY_START" "start" "" "" ""
@@ -1088,7 +1442,7 @@ run_start() {
     printf 'End-of-day scheduled for %s (in %s seconds)\n' "$end_at" "$eod_wait"
   fi
   if is_test_mode; then
-    printf 'TEST MODE: prompt interval=10s, day length=2m, meditation timer=15s, escalation break=10s\n'
+    printf 'TEST MODE: prompt interval=10s, day length=2m, meditation timer=15s, escalation break=10s, hand yoga interval=30s, hand yoga snooze=5s\n'
   fi
 }
 
@@ -1165,6 +1519,7 @@ run_status() {
 
   status_line_pid "prompt_pid" "${prompt_pid:-}" "__prompt-loop"
   status_line_pid "eod_pid" "${eod_pid:-}" "__eod-wait"
+  status_line_pid "hand_yoga_pid" "${hand_yoga_pid:-}" "__hand-yoga-loop"
 
   printf 'last_task_text: %s\n' "${last_task_text:-<none>}"
   if [[ -n "${last_prompt_ts:-}" ]]; then
@@ -1179,6 +1534,14 @@ run_status() {
   else
     printf 'meditation_url_set: no\n'
   fi
+  if [[ -n "${hand_yoga_url:-}" ]]; then
+    printf 'hand_yoga_url_set: yes\n'
+    printf 'hand_yoga_url: %s\n' "$hand_yoga_url"
+  else
+    printf 'hand_yoga_url_set: no\n'
+    printf 'hand_yoga_url: <none>\n'
+  fi
+  printf 'hand_yoga_count_today: %s\n' "$(int_or_default "${hand_yoga_count_today:-}" "0")"
   printf 'consecutive_same_count: %s\n' "$(int_or_default "${consecutive_same_count:-}" "0")"
   printf 'last_action: %s\n' "${last_action:-<none>}"
   printf 'state_file: %s\n' "$STATE_FILE"
@@ -1291,6 +1654,9 @@ run_resume() {
   paused_total_secs="$((paused_total + paused_delta))"
   pause_started_ts=""
   paused="no"
+  if [[ -n "${last_hand_yoga_ts:-}" && "${last_hand_yoga_ts:-}" =~ ^[0-9]+$ && "$paused_delta" -gt 0 ]]; then
+    last_hand_yoga_ts="$((last_hand_yoga_ts + paused_delta))"
+  fi
 
   interval="$(state_prompt_interval_secs)"
   remaining="$(compute_remaining_secs "$now")"
@@ -1306,6 +1672,7 @@ run_resume() {
 
   start_prompt_loop_bg "$day_start_ts" "$interval"
   start_eod_bg "$day_start_ts" "$remaining"
+  start_hand_yoga_bg "$day_start_ts"
   save_state
   log_event "RESUME" "resume" "$paused_delta" "" ""
 
@@ -1334,6 +1701,74 @@ run_clear_meditation_url() {
   meditation_url=""
   save_state
   printf 'Meditation URL cleared.\n'
+}
+
+run_set_hand_yoga_url() {
+  local url="${1:-}"
+  local had_url="no"
+  if [[ -z "$url" ]]; then
+    printf 'Usage: work_chill hand-yoga-url set "<url>"\n' >&2
+    exit 1
+  fi
+
+  load_state
+  if [[ -n "${hand_yoga_url:-}" ]]; then
+    had_url="yes"
+  fi
+  hand_yoga_url="$url"
+
+  if [[ -n "${day_start_ts:-}" && "$had_url" == "no" ]]; then
+    hand_yoga_count_today="0"
+    hand_yoga_snoozed_until=""
+    last_hand_yoga_ts="$(date +%s)"
+  fi
+
+  if [[ -n "${day_start_ts:-}" && "${paused:-no}" != "yes" ]]; then
+    kill_pid_if_ours "${hand_yoga_pid:-}" "__hand-yoga-loop"
+    hand_yoga_pid=""
+    start_hand_yoga_bg "$day_start_ts"
+  fi
+
+  save_state
+  printf 'Hand yoga URL set.\n'
+}
+
+run_clear_hand_yoga_url() {
+  load_state
+  hand_yoga_url=""
+  hand_yoga_snoozed_until=""
+  kill_pid_if_ours "${hand_yoga_pid:-}" "__hand-yoga-loop"
+  hand_yoga_pid=""
+  save_state
+  printf 'Hand yoga URL cleared.\n'
+}
+
+run_show_hand_yoga_url() {
+  load_state
+  if [[ -n "${hand_yoga_url:-}" ]]; then
+    printf '%s\n' "$hand_yoga_url"
+  else
+    printf '<not set>\n'
+  fi
+}
+
+run_hand_yoga_url() {
+  local sub="${1:-}"
+  case "$sub" in
+    set)
+      run_set_hand_yoga_url "${2:-}"
+      ;;
+    clear)
+      run_clear_hand_yoga_url
+      ;;
+    show)
+      run_show_hand_yoga_url
+      ;;
+    *)
+      printf 'Usage: work_chill hand-yoga-url <set|clear|show> [url]\n' >&2
+      exit 1
+      ;;
+  esac
 }
 
 run_tail() {
@@ -1422,6 +1857,13 @@ run_doctor() {
     fi
   fi
 
+  load_state
+  if [[ -n "${hand_yoga_url:-}" ]]; then
+    printf '[ok] hand yoga URL configured\n'
+  else
+    printf '[ok] hand yoga URL not configured (feature off)\n'
+  fi
+
   if [[ "$failures" -eq 0 ]]; then
     printf 'doctor_result: healthy\n'
     return 0
@@ -1443,6 +1885,9 @@ Commands:
   work_chill shutdown
   work_chill cancel
   work_chill debug-prompt
+  work_chill hand-yoga-url set "<url>"
+  work_chill hand-yoga-url clear
+  work_chill hand-yoga-url show
   work_chill set-meditation-url "<url>"
   work_chill clear-meditation-url
   work_chill tail
@@ -1461,6 +1906,8 @@ Testing mode:
   - day length: 2 minutes (unless --end-at is provided)
   - meditation timer: 15 seconds
   - escalation break timer: 10 seconds
+  - hand yoga interval: 30 seconds (if URL set)
+  - hand yoga snooze: 5 seconds
 EOF
 }
 
@@ -1494,6 +1941,42 @@ run_eod_wait() {
   fi
 }
 
+run_hand_yoga_loop() {
+  local start_ts="${1:-}"
+  local now=0
+  local sleep_for=0
+  local count_today=0
+  local max_per_day=0
+
+  while true; do
+    load_state
+    if [[ -z "${day_start_ts:-}" || "${day_start_ts:-}" != "$start_ts" ]]; then
+      exit 0
+    fi
+    if [[ "${paused:-no}" == "yes" ]]; then
+      exit 0
+    fi
+    if ! hand_yoga_enabled; then
+      exit 0
+    fi
+
+    count_today="$(int_or_default "${hand_yoga_count_today:-}" "0")"
+    max_per_day="$(state_hand_yoga_max_per_day)"
+    if (( count_today >= max_per_day )); then
+      exit 0
+    fi
+
+    now="$(date +%s)"
+    if hand_yoga_due_now "$now"; then
+      handle_hand_yoga_due "$now"
+      continue
+    fi
+
+    sleep_for="$(next_hand_yoga_sleep_secs "$now")"
+    sleep "$sleep_for"
+  done
+}
+
 internal_shutdown() {
   local mode="${1:-auto}"
   shutdown_flow "$mode"
@@ -1513,6 +1996,7 @@ main() {
     shutdown) run_shutdown ;;
     cancel) run_cancel ;;
     debug-prompt) run_debug_prompt ;;
+    hand-yoga-url) run_hand_yoga_url "$@" ;;
     set-meditation-url) run_set_meditation_url "${1:-}" ;;
     clear-meditation-url) run_clear_meditation_url ;;
     tail) run_tail ;;
@@ -1520,6 +2004,7 @@ main() {
     help|-h|--help) run_help ;;
     __prompt-loop) run_prompt_loop "${1:-}" "${2:-}" ;;
     __eod-wait) run_eod_wait "${1:-}" "${2:-}" ;;
+    __hand-yoga-loop) run_hand_yoga_loop "${1:-}" ;;
     __shutdown) internal_shutdown "${1:-auto}" ;;
     __meditation-timer) run_meditation_timer "${1:-360}" ;;
     __escalation-break-timer) run_escalation_break_timer "${1:-150}" ;;

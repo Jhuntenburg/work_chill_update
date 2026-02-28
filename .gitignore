@@ -1,0 +1,8 @@
+# IDE metadata
+.idea/
+
+# Local cache
+.cache/
+
+# macOS filesystem noise
+.DS_Store

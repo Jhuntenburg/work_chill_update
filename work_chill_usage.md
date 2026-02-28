@@ -68,6 +68,24 @@ work_chill shutdown
   - `Next micro-step`
   - timeout/cancel -> ignore
 
+## Hand yoga reminder (optional)
+
+Feature is OFF by default and enabled only when a URL is set.
+
+Set, clear, and show URL:
+
+```bash
+work_chill hand-yoga-url set https://example.com
+work_chill hand-yoga-url show
+work_chill hand-yoga-url clear
+```
+
+Behavior:
+- Fires every 3 hours of active work time (paused time excluded).
+- Max 2 reminders per day.
+- Collision guard: defers when a recent TASK_PULSE (5m) or ESCALATION (10m) occurred.
+- Actions: `Do it now`, `Snooze 20m`, `Skip today`.
+
 ## Commands
 
 ```bash
@@ -78,6 +96,9 @@ work_chill status
 work_chill shutdown
 work_chill cancel
 work_chill debug-prompt
+work_chill hand-yoga-url set <url>
+work_chill hand-yoga-url clear
+work_chill hand-yoga-url show
 work_chill set-meditation-url "<url>"
 work_chill clear-meditation-url
 work_chill tail
@@ -103,7 +124,10 @@ chill        # opens this guide in browser
 - `paused_total_secs`
 - `active_elapsed_secs`
 - `remaining_secs`
-- prompt/eod PID health
+- prompt/eod/hand_yoga PID health
+- `hand_yoga_url_set`
+- `hand_yoga_url`
+- `hand_yoga_count_today`
 
 ## Files and logs
 
@@ -123,3 +147,5 @@ In test mode:
 - day length = 2 minutes (unless `--end-at` is provided)
 - meditation timer = 15 seconds
 - escalation break timer = 10 seconds
+- hand yoga interval = 30 seconds (URL must be set)
+- hand yoga snooze = 5 seconds

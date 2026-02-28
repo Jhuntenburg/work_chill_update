@@ -9,6 +9,8 @@ Personal macOS work pacing helper script.
 - Runs friction-check prompts every 55 minutes (10s in test mode)
 - Supports `pause` / `resume` so the day target is based on active work time
 - Triggers escalation on `stuck` and after 3 consecutive `same_as_last` responses
+- Optional hand yoga reminder (feature-gated by URL) every 3 hours of active work, max 2/day
+- Hand yoga reminder respects pause/resume and defers during recent prompt/escalation quiet windows
 - Supports manual and automatic shutdown flow
 - Logs events to weekly JSONL files at `~/.work_chill/logs/YYYY-Www.jsonl` (ISO week)
 - Maintains `~/.work_chill/log.jsonl` as a symlink to the current week file for compatibility
@@ -40,6 +42,9 @@ work_chill status
 work_chill shutdown
 work_chill cancel
 work_chill debug-prompt
+work_chill hand-yoga-url set "<url>"
+work_chill hand-yoga-url clear
+work_chill hand-yoga-url show
 work_chill doctor
 ```
 
@@ -75,3 +80,5 @@ Test mode values:
 - day length: `120` seconds (unless `--end-at` is provided)
 - meditation timer: `15` seconds
 - escalation break timer: `10` seconds
+- hand yoga interval: `30` seconds (only when hand yoga URL is set)
+- hand yoga snooze: `5` seconds
