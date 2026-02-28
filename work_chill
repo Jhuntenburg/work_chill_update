@@ -1685,7 +1685,7 @@ run_debug_prompt() {
 }
 
 run_set_meditation_url() {
-  local url="${1:-}"
+  local url="${*:-}"
   if [[ -z "$url" ]]; then
     printf 'Usage: work_chill set-meditation-url "<url>"\n' >&2
     exit 1
@@ -1704,7 +1704,7 @@ run_clear_meditation_url() {
 }
 
 run_set_hand_yoga_url() {
-  local url="${1:-}"
+  local url="${*:-}"
   local had_url="no"
   if [[ -z "$url" ]]; then
     printf 'Usage: work_chill hand-yoga-url set "<url>"\n' >&2
@@ -1756,7 +1756,8 @@ run_hand_yoga_url() {
   local sub="${1:-}"
   case "$sub" in
     set)
-      run_set_hand_yoga_url "${2:-}"
+      shift || true
+      run_set_hand_yoga_url "$@"
       ;;
     clear)
       run_clear_hand_yoga_url
@@ -1997,7 +1998,7 @@ main() {
     cancel) run_cancel ;;
     debug-prompt) run_debug_prompt ;;
     hand-yoga-url) run_hand_yoga_url "$@" ;;
-    set-meditation-url) run_set_meditation_url "${1:-}" ;;
+    set-meditation-url) run_set_meditation_url "$@" ;;
     clear-meditation-url) run_clear_meditation_url ;;
     tail) run_tail ;;
     doctor) run_doctor ;;

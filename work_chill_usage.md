@@ -75,7 +75,7 @@ Feature is OFF by default and enabled only when a URL is set.
 Set, clear, and show URL:
 
 ```bash
-work_chill hand-yoga-url set https://example.com
+work_chill hand-yoga-url set "https://example.com"
 work_chill hand-yoga-url show
 work_chill hand-yoga-url clear
 ```
@@ -89,21 +89,24 @@ Behavior:
 ## Commands
 
 ```bash
-work_chill start [--end-at HH:MM]
-work_chill pause
-work_chill resume
-work_chill status
-work_chill shutdown
-work_chill cancel
-work_chill debug-prompt
-work_chill hand-yoga-url set <url>
-work_chill hand-yoga-url clear
-work_chill hand-yoga-url show
-work_chill set-meditation-url "<url>"
-work_chill clear-meditation-url
-work_chill tail
-work_chill doctor
-work_chill help
+work_chill start [--end-at HH:MM]: starts a day and schedules friction checks + EOD timer 
+	-Example: work_chill start --end-at 17:00
+work_chill pause: pauses active-time tracking and background timers.
+work_chill resume: resumes active-time tracking and re-schedules timers.
+work_chill status: prints current state, timing, and worker PID health.
+work_chill shutdown: runs manual shutdown ritual immediately.
+work_chill cancel: stops running workers and clears active day state.
+work_chill debug-prompt`: triggers one friction-check prompt immediately.
+work_chill hand-yoga-url set "<url>"`: enables hand-yoga reminders by setting URL. 
+	-Example: work_chill hand-yoga-url set "https://example.com/hand-reset"
+work_chill hand-yoga-url clear: disables hand-yoga reminders by clearing URL.
+work_chill hand-yoga-url show: prints the current hand-yoga URL or <not set>
+work_chill set-meditation-url "<url>": sets meditation used during shutdown
+	-Example: work_chill set-meditation-url "https://www.youtube.com/watch?v=abcd1234"
+work_chill clear-meditation-url: clears custom meditation URL.
+work_chill tail: follows latest events in current weekly JSONL log.
+work_chill doctor: runs environment and file health checks.
+work_chill help: shows built-in command help and test-mode values.
 ```
 
 ## Aliases
